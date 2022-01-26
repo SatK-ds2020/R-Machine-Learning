@@ -1,0 +1,186 @@
+---
+title: "Logistic Regression"
+author: "Satindra Kathania"
+date: "12/14/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading the Data and packages
+
+```{r data}
+library(tidyverse)
+library(caret) # tuning, splitting the data etc
+
+AdmData <- read_csv('data/Admission_Predict_Ver1.1.csv')[-1]
+str(AdmData)
+# we will convert them appropriately later on
+summary(AdmData)
+```
+
+## Data Preparation
+
+```{r data prep}
+# converting them into the correct data types
+# i have renamed(AdmData --> AdmData_1) to preserve the original data
+AdmData_1 <- AdmData %>%
+  mutate(
+    `University Rating` = as_factor(`University Rating`),
+    `Research` = as_factor(`Research`),
+    `SOP` = as_factor(`SOP`)
+  )
+str(AdmData_1)
+summary(AdmData_1)
+```
+
+# checking NA/MISSING DATA
+```{r}
+colSums(is.na(AdmData_1)) # no NA values
+AdmData_1$`Chance of Admit` # to help me choose a representative threshold
+```
+
+## Exploratory Data Analaysis
+
+```{r EDA}
+# i willnot do EDA(exploratory data analysis but you can do it here)
+# use ggplot2, it is already loaded.
+
+par(mfrow=c(3,2))
+ggplot(AdmData_1,aes(x=`University Rating`, y= `Chance of Admit`))+geom_boxplot()
+
+ggplot(AdmData_1,aes(x=SOP, y= `Chance of Admit`))+geom_boxplot()
+
+ggplot(AdmData_1,aes(x=Research, y= `Chance of Admit`))+geom_boxplot()
+
+ggplot(AdmData_1,aes(x=`GRE Score`, y= `Chance of Admit`))+geom_point()+geom_smooth()
+
+ggplot(AdmData_1,aes(x=`TOEFL Score`, y= `Chance of Admit`))+geom_point()+geom_smooth()
+
+ggplot(AdmData_1,aes(x=CGPA, y= `Chance of Admit`))+geom_point()+geom_smooth(formula = y~x)
+
+```
+
+# convert the target variable for binary factor
+```{r}
+AdmData_1$`Chance of Admit` <- ifelse(AdmData_1$`Chance of Admit` >0.7,1,0)
+head(AdmData_1$`Chance of Admit`)
+```
+
+# index to split
+```{r}
+index <- createDataPartition(AdmData_1$`Chance of Admit`,list = FALSE, p=0.8)
+index = as_vector(index)
+train <- AdmData_1[index,]
+test <- AdmData_1[-index,]
+# more training data for better examples for the model to learn from
+```
+
+## Modelling
+
+# Poisson Regression
+Poisson regression is useful when predicting an outcome variable representing counts from a set of continuous predictor variables.
+
+
+
+```{r modelling}
+# adding the train data into the search path
+attach(train)
+model1 <- glm(`Chance of Admit`~`GRE Score`+LOR+CGPA+Research, 
+              data = AdmData_1, 
+              family = poisson(link = "log"))
+summary(model1)
+
+
+# make many models for the sake of choosing the better model
+# i am going to use model1 to predict for this video
+```
+# Logistic Regression
+Logistic regression is useful when you are predicting a binary outcome from a set of continuous predictor variables. It is frequently preferred over discriminant function analysis because of its less restrictive assumptions.
+
+```{r}
+model2 <- glm(`Chance of Admit`~., 
+              data = AdmData_1, 
+              family = binomial(link = "logit"))
+summary(model2)
+```
+```{r}
+model3 <- glm(`Chance of Admit`~`GRE Score`+LOR+CGPA+Research, 
+              data = AdmData_1, 
+              family = binomial(link = "logit"))
+summary(model3)
+```
+```{r}
+confint(model3) # 95% CI for the coefficients
+exp(coef(model3)) # exponentiated coefficients
+exp(confint(model3)) # 95% CI for exponentiated coefficients
+predict(model3, type="response") # predicted values
+residuals(model3, type="deviance") # residuals
+```
+
+```{r}
+#+LOR+CGPA+Research
+par(mfrow=c(2,2))
+cdplot(factor(`Chance of Admit`)~`GRE Score`, data=AdmData_1)
+cdplot(factor(`Chance of Admit`)~LOR, data=AdmData_1)
+cdplot(factor(`Chance of Admit`)~CGPA, data=AdmData_1)
+cdplot(factor(`Chance of Admit`)~Research, data=AdmData_1)
+```
+```{r}
+plot(model1)
+```
+
+
+## making predictions
+
+```{r predictions}
+options(scipen=999) # disable scientifc notation
+pred1 <- predict(model1, newdata = test, type = "response")
+pred1 <- ifelse(pred1 >=0.7,1,0)
+
+# making comparison
+df <- data.frame(pred1, test$`Chance of Admit`)
+df
+tb <- table(test$`Chance of Admit`, pred1)
+confusionMatrix(tb)
+```
+
+
+```{r predictions}
+options(scipen=999) # disable scientifc notation
+pred3 <- predict(model3, newdata = test, type = "response")
+pred3 <- ifelse(pred3 >=0.7,1,0)
+
+# making comparison
+df <- data.frame(pred3, test$`Chance of Admit`)
+df
+tb <- table(test$`Chance of Admit`, pred3)
+confusionMatrix(tb)
+```
+
+```{r}
+model4 <- glm(`Chance of Admit`~`GRE Score`+LOR+CGPA+Research, 
+              data = AdmData_1, 
+              family = gaussian(link = "identity"))
+summary(model4)
+plot(model4)
+```
+```{r predictions}
+options(scipen=999) # disable scientifc notation
+pred4 <- predict(model4, newdata = test, type = "response")
+pred4 <- ifelse(pred4 >=0.7,1,0)
+
+# making comparison
+df <- data.frame(pred4, test$`Chance of Admit`)
+df
+tb <- table(test$`Chance of Admit`, pred4)
+confusionMatrix(tb)
+```
+
+# you can create another model and try to tune using caret package..
+# also try to normalize, standardize the data to see if it will have any
+# impact on the performance of the model.
+# i will leave the link on the description below
+# THANKS GUYS AND REMEMBER TO SUBSCRIBE AND SHARE.

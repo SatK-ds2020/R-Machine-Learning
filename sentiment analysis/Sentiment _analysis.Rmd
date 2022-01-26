@@ -1,0 +1,392 @@
+---
+title: "Sentiment_analysis"
+author: "Satindra Kathania"
+date: "12/17/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+In this chapter, we will treat the NASA metadata as a text dataset and show how to implement several tidy text approaches with this real-life text. We will use word co-occurrences and correlations, tf-idf, and topic modeling to explore the connections between the datasets. Can we find datasets that are related to each other? Can we find clusters of similar datasets? Since we have several text fields in the NASA metadata, most importantly the title, description, and keyword fields, we can explore the connections between the fields to better understand the complex world of data at NASA. This type of approach can be extended to any domain that deals with text, so let???s take a look at this metadata and get started.
+
+#required libraries
+```{r}
+library(jsonlite)
+metadata <- fromJSON("https://data.nasa.gov/data.json")
+names(metadata$dataset)
+```
+
+```{r}
+glimpse(metadata$dataset)
+```
+The title and description fields are stored as character vectors, but the keywords are stored as a list of character vectors.
+```{r}
+library(dplyr)
+
+nasa_title <- tibble(id = metadata$dataset$identifier, 
+                     title = metadata$dataset$title)
+nasa_title
+
+```
+
+```{r}
+nasa_desc <- tibble(id = metadata$dataset$identifier, 
+                    desc = metadata$dataset$description)
+
+nasa_desc 
+
+```
+
+```{r}
+library(tidyr)
+nasa_keyword <- tibble(id = metadata$dataset$identifier, 
+                       keyword = metadata$dataset$keyword) %>%
+ # Now we can build the tidy data frame for the keywords. For this one, we need to use unnest() from tidyr, because they are in a list-column.
+  unnest(keyword)
+nasa_keyword
+```
+
+```{r}
+library(tidytext)
+
+nasa_title <- nasa_title %>% 
+  unnest_tokens(word, title) %>% 
+  anti_join(stop_words) # removing stopwords by anti_join
+nasa_title
+nasa_desc <- nasa_desc %>% 
+  unnest_tokens(word, desc) %>% 
+  anti_join(stop_words)
+nasa_desc
+# We will not remove stop words from the keywords, because those are short, human-assigned keywords like ???RADIATION??? or ???CLIMATE INDICATORS???.
+```
+What are the most common words in the NASA dataset titles? We can use count() from dplyr to check this out.
+```{r}
+nasa_title %>%
+  count(word, sort = TRUE)
+nasa_desc %>% 
+  count(word, sort = TRUE)
+nasa_keyword %>% 
+  group_by(keyword) %>% 
+  count(sort = TRUE)
+```
+
+Words like ???data??? and ???global??? are used very often in NASA titles and descriptions. We may want to remove digits and some ???words??? like ???v1??? from these data frames for many types of analyses; they are not too meaningful for most audiences.For that make a list of custom stopwords.
+
+```{r}
+my_stopwords <- tibble(word = c(as.character(1:10), 
+                                "v1", "v03", "l2", "l3", "l4", "v5.2.0","v1.0","67p","ii", "0.5","v001","v1.0","v2.0",
+                                "v3.0","v003", "v004", "v005", "v006", "v7","	v061","V5.0","0.667","v05","v2019.0",	"v5.12.4","vg2","xxxx","abcd","--------","unk","________"))
+nasa_title <- nasa_title %>% 
+  anti_join(my_stopwords) 
+```
+
+
+```{r}
+nasa_desc <- nasa_desc %>% 
+  anti_join(my_stopwords)
+```
+As a next step, let???s examine which words commonly occur together in the titles, descriptions, and keywords of NASA datasets.We can use pairwise_count() from the widyr package to count how many times each pair of words occurs together in a title or description field.
+```{r}
+library(widyr)
+title_word_pairs <- nasa_title %>% 
+  pairwise_count(word, id, sort = TRUE, upper = FALSE)
+
+title_word_pairs
+
+desc_word_pairs <- nasa_desc %>% 
+  pairwise_count(word, id, sort = TRUE, upper = FALSE)
+
+desc_word_pairs
+```
+
+```{r}
+library(ggplot2)
+library(igraph)
+library(ggraph)
+
+set.seed(1234)
+title_word_pairs %>%
+  filter(n >= 250) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout="fr") +
+  geom_edge_link(aes(edge_alpha = n, edge_width = n), edge_colour = "cyan4") +
+  geom_node_point(size = 5) +
+  geom_node_text(aes(label = name), repel = TRUE, 
+                 point.padding = unit(0.2, "lines")) +
+  theme_void()
+```
+We see some clear clustering in this network of title words; words in NASA dataset titles are largely organized into several families of words that tend to go together.
+```{r}
+set.seed(1234)
+desc_word_pairs %>%
+  filter(n >= 3000) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n, edge_width = n), edge_colour = "darkred") +
+  geom_node_point(size = 5) +
+  geom_node_text(aes(label = name), repel = TRUE,
+                 point.padding = unit(0.2, "lines")) +
+  theme_void()
+```
+
+```{r}
+keyword_pairs <- nasa_keyword %>% 
+  pairwise_count(keyword, id, sort = TRUE, upper = FALSE)
+
+keyword_pairs
+```
+
+```{r}
+set.seed(1234)
+keyword_pairs %>%
+  filter(n >= 1000) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n, edge_width = n), edge_colour = "royalblue") +
+  geom_node_point(size = 5) +
+  geom_node_text(aes(label = name), repel = TRUE,
+                 point.padding = unit(0.2, "lines")) +
+  theme_void()
+```
+To examine the relationships among keywords in a different way, we can find the correlation among the keywords 
+```{r}
+keyword_cors <- nasa_keyword %>% 
+  group_by(keyword) %>%
+  filter(n() >= 50) %>%
+  pairwise_cor(keyword, id, sort = TRUE, upper = FALSE)
+
+keyword_cors
+```
+Notice that these keywords at the top of this sorted data frame have correlation coefficients equal to 1; they always occur together. This means these are redundant keywords. It may not make sense to continue to use both of the keywords in these sets of pairs; instead, just one keyword could be used.
+```{r,fig.height=,fig.width=}
+set.seed(1234)
+keyword_cors %>%
+  filter(correlation > .9) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "dh") +
+  geom_edge_link(aes(edge_alpha = correlation, edge_width = correlation), edge_colour = "royalblue") +
+  geom_node_point(size = 3) +
+  geom_node_text(aes(label = name), repel = TRUE,
+                 point.padding = unit(0.5, "lines")) +
+  theme_void()
+```
+We can use tf-idf, the term frequency times inverse document frequency, to identify words that are especially important to a document within a collection of documents.
+```{r}
+desc_tf_idf <- nasa_desc %>% 
+  count(id, word, sort = TRUE) %>%
+  ungroup() %>%
+  bind_tf_idf(word, id, n)
+
+# find the highest tf-idf words in the NASA description fields
+desc_tf_idf %>% 
+  arrange(-tf_idf)
+```
+Let???s do a full join of the keyword data frame and the data frame of description words with tf-idf, and then find the highest tf-idf words for a given keyword.
+```{r}
+desc_tf_idf <- full_join(desc_tf_idf, nasa_keyword, by = "id")
+desc_tf_idf %>% 
+  arrange(-tf_idf)
+```
+Let???s plot some of the most important words, as measured by tf-idf, for a few example keywords used on NASA datasets. First, let???s use dplyr operations to filter for the keywords we want to examine and take just the top 15 words for each keyword.
+```{r}
+library(ggplot2)
+desc_tf_idf %>% 
+  filter(!near(tf, 1)) %>%
+  filter(keyword %in% c("earth science", "oceans", "agriculture",
+                        "tectonics", "landscape",
+                        "mars", "biosphere","forest science","solar system")) %>%
+  arrange(desc(tf_idf)) %>%
+  group_by(keyword) %>%
+  distinct(word, keyword, .keep_all = TRUE) %>%
+  slice_max(tf_idf, n = 15, with_ties = FALSE) %>% 
+  ungroup() %>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>%
+  ggplot(aes(tf_idf, word, fill = keyword)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~keyword, ncol = 3, scales = "free") +
+  labs(title = "Highest tf-idf words in NASA metadata description fields",
+       caption = "NASA metadata from https://data.nasa.gov/data.json",
+       x = "tf-idf", y = NULL)
+```
+We can use topic modeling as described in Chapter 6 to model each document (description field) as a mixture of topics and each topic as a mixture of words. As in earlier chapters, we will use latent Dirichlet allocation (LDA) for our topic modeling; there are other possible approaches for topic modeling.
+```{r}
+my_stop_words <- bind_rows(stop_words, 
+                           tibble(word = c("nbsp", "amp", "gt", "lt",
+                                           "timesnewromanpsmt", "font",
+                                           "td", "li", "br", "tr", "quot",
+                                           "st", "img", "src", "strong",
+                                           "http", "file", "files",
+                                           as.character(1:12)), 
+                                  lexicon = rep("custom", 30)))
+
+word_counts <- nasa_desc %>%
+  anti_join(my_stop_words) %>%
+  count(id, word, sort = TRUE) %>%
+  ungroup()
+
+word_counts
+```
+to make a DocumentTermMatrix. We can cast() from our tidy text format to this non-tidy format
+```{r}
+desc_dtm <- word_counts %>%
+  cast_dtm(id, word, n)
+
+desc_dtm
+```
+use the topicmodels package to create an LDA model
+```{r}
+require(topicmodels)
+
+# be aware that running this model is time intensive
+desc_lda <- LDA(desc_dtm, k = 24, control = list(seed = 1234)) # 24 topics
+desc_lda
+```
+let???s tidy() the results of the model, i.e., construct a tidy data frame that summarizes the results of the model.
+```{r}
+tidy_lda <- tidy(desc_lda)
+tidy_lda
+```
+The column ?? tells us the probability of that term being generated from that topic for that document. It is the probability of that term (word) belonging to that topic. Notice that some of the values for ?? are very, very low, and some are not so low.find the top 10 terms for each topic
+```{r}
+top_terms <- tidy_lda %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 10, with_ties = FALSE) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+top_terms
+```
+Visual interpretation
+```{r}
+top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  group_by(topic, term) %>%    
+  arrange(desc(beta)) %>%  
+  ungroup() %>%
+  ggplot(aes(beta, term, fill = as.factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  scale_y_reordered() +
+  labs(title = "Top 10 terms in each LDA topic",
+       x = expression(beta), y = NULL) +
+  facet_wrap(~ topic, ncol = 4, scales = "free")
+```
+Next, let???s examine which topics are associated with which description fields (i.e., documents). We will look at a different probability for this, 
+??, the probability that each document belongs in each topic, again using the tidy verb.
+```{r}
+lda_gamma <- tidy(desc_lda, matrix = "gamma")
+
+lda_gamma
+```
+
+```{r}
+ggplot(lda_gamma, aes(gamma)) +
+  geom_histogram(alpha = 0.8) +
+  scale_y_log10() +
+  labs(title = "Distribution of probabilities for all topics",
+       y = "Number of documents", x = expression(gamma))
+```
+notice that ?? runs from 0 to 1; remember that this is the probability that a given document belongs in a given topic. There are many values near zero, which means there are many documents that do not belong in each topic. Also, there are many values near ?? = 1; these are the documents that do belong in those topics. This distribution shows that documents are being well discriminated as belonging to a topic or not.
+```{r}
+ggplot(lda_gamma, aes(gamma, fill = as.factor(topic))) +
+  geom_histogram(alpha = 0.8, show.legend = FALSE) +
+  facet_wrap(~ topic, ncol = 4) +
+  scale_y_log10() +
+  labs(title = "Distribution of probability for each topic",
+       y = "Number of documents", x = expression(gamma))
+```
+Let???s connect these topic models with the keywords and see what relationships we can find. We can full_join() this to the human-tagged keywords and discover which keywords are associated with which topic.
+```{r}
+lda_gamma <- full_join(lda_gamma, nasa_keyword, by = c("document" = "id"))
+lda_gamma
+```
+Now we can use filter() to keep only the document-topic entries that have probabilities (??) greater than some cut-off value; let???s use 0.9.
+```{r}
+top_keywords <- lda_gamma %>% 
+  filter(gamma > 0.9) %>% 
+  count(topic, keyword, sort = TRUE)
+
+top_keywords
+```
+
+```{r}
+top_keywords %>%
+  group_by(topic) %>%
+  slice_max(n, n = 5, with_ties = FALSE) %>%
+  ungroup %>%
+  mutate(keyword = reorder_within(keyword, n, topic)) %>%
+  ggplot(aes(n, keyword, fill = as.factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  labs(title = "Top keywords for each LDA topic",
+       x = "Number of documents", y = NULL) +
+  scale_y_reordered() +
+  facet_wrap(~ topic, ncol = 4, scales = "free")
+```
+
+
+
+
+
+
+
+
+
+#Sentiment function for tweeter data
+```{r}
+
+library(purrr)
+library(dplyr)
+library('ROAuth')
+library('RCurl')
+library(stringr)
+
+score.sentiment<-function(sentences,pos.words,neg.words,.progress='none'){
+  scores<-lapply(sentences,function(sentence,pos.words,neg.words){
+    sentence<-gsub('[[:punct:]]', "",sentence) # globally substitute punctuations
+    sentence<-gsub('[[:cntrl:]]', "",sentence) # substitute control words
+    sentence<-gsub('\\d+', "",sentence) # substitute digits
+    sentence<-tolower(sentence) # convert to lower case
+    word.list<-str_split(sentence,'\\s+') # split the sentence to words at spaces
+    words<-unlist(word.list) # list converted into vector
+    pos.matches<-match(words,pos.words) # match the words with pos words
+    neg.matches<-match(words,neg.words)
+    pos.matches<-!is.na(pos.matches) # remove the na, words that doesn't match 
+    pos.matches<-!is.na(neg.matches)
+    score<-sum(pos.matches)-sum(neg.matches)
+    return(score)
+  },
+  pos.words,neg.words,.progress=.progress)
+  score.df<-data.frame(score=scores,text=sentence)
+  return(score.df)
+}
+
+# loading the pos.words and negative words
+
+pos.words=scan('positive-words.txt',what = 'character',comment.char = ';')
+neg.words=scan('negative-words.txt',what = 'character',comment.char = ';')
+bscore<-score.sentiment(tweet_df$text,pos.words,neg.words,.progress = 'text') # for barcelona
+rscore<-score.sentiment(tweet2_df$text,pos.words,neg.words,.progress = 'text') # real-madrid
+hist(rscore$score)
+hist(bscore$score)
+```
+
+Acknowledgement:
+Opinion Lexicon: Negative
+;
+; This file contains a list of NEGATIVE opinion words (or sentiment words).
+;
+; This file and the papers can all be downloaded from 
+;    http://www.cs.uic.edu/~liub/FBS/sentiment-analysis.html
+;
+; If you use this list, please cite one of the following two papers:
+;
+;   Minqing Hu and Bing Liu. "Mining and Summarizing Customer Reviews." 
+;       Proceedings of the ACM SIGKDD International Conference on Knowledge 
+;       Discovery and Data Mining (KDD-2004), Aug 22-25, 2004, Seattle, 
+;       Washington, USA, 
+;   Bing Liu, Minqing Hu and Junsheng Cheng. "Opinion Observer: Analyzing 
+;       and Comparing Opinions on the Web." Proceedings of the 14th 
+;       International World Wide Web conference (WWW-2005), May 10-14, 
+;       2005, Chiba, Japan.
+

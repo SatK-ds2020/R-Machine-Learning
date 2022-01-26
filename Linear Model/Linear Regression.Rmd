@@ -1,0 +1,166 @@
+---
+title: "Linear Regression-predicting the prices for houses"
+author: "Satindra Kathania"
+date: "12/14/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading The packages
+
+```{r data and packages,message=FALSE}
+library(tidyverse)
+library(caret)
+```
+## load the data
+
+```{r, show_col_types = FALSE}
+train <- read_csv('data/train.csv')[-1]
+test <- read_csv('data/test.csv')[-1]
+```
+
+## Data Preparation
+
+```{r data prep}
+colnames(train)
+colnames(test)
+# study the data
+str(train)
+str(test)
+```
+
+## dealing with the na values
+
+```{r}
+na_percentage <-(colSums(is.na(train)) / nrow(train)) * 100
+as.data.frame(na_percentage)
+```
+
+# prepare the data/ split the data
+```{r}
+# partition the 80% of data for training set and 20% of data for Validation set 
+Index <- createDataPartition(train$SalePrice, p = .8, 
+                                  list = FALSE, 
+                                  times = 1)
+train <- train[Index,]
+val <- train[-Index,]
+
+attach(c(train,val))
+```
+
+# drop all character and na columns
+```{r}
+train <- train %>%
+          select_if(is.numeric) %>%
+          select(-c(LotFrontage,MasVnrArea,GarageYrBlt))
+as.data.frame(colSums(is.na(train)))
+
+val <- val %>%
+        select_if(is.numeric) %>%
+        select(-c(LotFrontage,MasVnrArea,GarageYrBlt))
+as.data.frame(colSums(is.na(val)))
+```
+
+# fit the model
+```{r}
+model1 <- lm(SalePrice~., data = train)
+summary(model1)
+```
+
+
+## Standardization and model fiting
+
+```{r standarzation and model fitting}
+# first remove the target variable i.e salesPrice or 34th variable than standardize the data
+# mean 0, sd =1
+prep1 <- preProcess(train[,-34], method = c('center','scale'))
+newTrain <- predict(prep1, train[,-34])
+summary(newTrain)
+```
+# fitting the model with standarization
+```{r}
+newTrain$SalePrice <- train$SalePrice
+model2 <- lm(SalePrice~., data = newTrain)
+summary(model2)
+```
+
+## normalization and model fitting
+
+```{r nomalization and model fitting}
+# normalization
+normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+
+newTrain1 <- as.data.frame(apply(train[,-34], 2, FUN=normalize))
+newTrain1$SalePrice <- train$SalePrice
+model3 <- lm(SalePrice~., data = newTrain1)
+summary(model3)
+
+```
+
+## removing insignificant variables
+
+```{r removing insignificant variables}
+newTrain2 <- train %>%
+  select(-c(TotalBsmtSF,GrLivArea,LowQualFinSF,EnclosedPorch,MiscVal,
+            GarageArea,MoSold,HalfBath,BsmtUnfSF,YearRemodAdd,BsmtFinSF2,YrSold,`3SsnPorch`
+            ,BsmtHalfBath,OpenPorchSF,Fireplaces,PoolArea))
+
+# normalize
+newTrain2 <- as.data.frame(apply(newTrain2[,-17], 2, normalize))
+newTrain2$SalePrice <- newTrain$SalePrice
+model4 <- lm(
+  SalePrice~., data = newTrain2)
+summary(model4)
+
+```
+
+## validation and predictions
+
+```{r validation and predictions}
+valData  <- val %>%
+  select(MSSubClass,LotArea,starts_with('Overall'),YearBuilt,BsmtFinSF1,
+         ends_with(c('FlrSF','AbvGr')),BsmtFullBath,FullBath,TotRmsAbvGrd,
+         GarageCars,WoodDeckSF,ScreenPorch)
+summary(valData)
+as.data.frame(colSums(is.na(valData)))
+
+valData <- as.data.frame(apply(valData, 2, normalize))
+valData$SalePrice <- val$SalePrice
+pred <- predict(model4, newdata = valData)
+pred
+
+# adding the sale Price
+submitData <- data.frame(predictions=pred, Actual=val$SalePrice)
+submitData 
+```
+
+## cross validation
+
+```{r cross validation}
+modelTrain1 <- train(SalePrice~., data=newTrain2, method="lm",
+                     tuneLength=10, trControl=trainControl(method = "cv"))
+
+modelTrain1
+summary(modelTrain1)
+```
+
+## testing the model on the test set
+
+```{r}
+testData  <- test %>%
+  select(MSSubClass,LotArea,starts_with('Overall'),YearBuilt,BsmtFinSF1,
+         ends_with(c('FlrSF','AbvGr')),BsmtFullBath,FullBath,TotRmsAbvGrd,
+         GarageCars,WoodDeckSF,ScreenPorch) %>%
+  drop_na()
+summary(testData)
+
+testData <- as.data.frame(apply(testData, 2, normalize))
+pred <- predict(model4, newdata = testData)
+pred
+```
+

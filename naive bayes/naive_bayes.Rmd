@@ -1,0 +1,165 @@
+---
+title: "naive_bayes"
+author: "Satindra Kathania"
+date: "12/16/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,message=FALSE}
+library(mlbench)
+library(caret)
+library(e1071)
+library(naivebayes)
+library(DataExplorer) # IF NOT INSTALLED, RSTUDIO WILL DETECT AND ASK IF IT SHOULD INSTALL
+```
+# loading data from the mlbench library
+```{r}
+data(PimaIndiansDiabetes)
+head(PimaIndiansDiabetes)
+data<-PimaIndiansDiabetes
+remove(PimaIndiansDiabetes)
+summary(data)
+str(data)
+```
+
+```{r}
+colSums(is.na(data))
+plot_missing(data)
+```
+
+```{r}
+library(reshape2)
+library(gridExtra)
+temp <- melt(data, measured = data[1:9])
+p1=ggplot(temp) + geom_histogram(aes(x=value)) + facet_grid(. ~ variable, scales = "free_x")
+
+trans <- preProcess(data, c("BoxCox","center", "scale"))
+
+data_trans <- data.frame(trans = predict(trans, data))
+temp_trans <- melt(data_trans, measured = c("trans.pregnant", "trans.glucose","trans.pressure","trans.triceps","trans.insulin","trans.mass","trans.pedigree","trans.age"))
+
+ p2=ggplot(temp_trans) + geom_histogram(aes(x=value), data = temp_trans) + 
+  facet_grid(. ~ variable, scales = "free_x")
+
+
+grid.arrange(p1, p2)
+```
+
+
+
+
+
+
+# determining the imbalance in the data set
+```{r}
+tb <- table(data$diabetes)
+tb
+# the dataset is imbalance
+```
+# proportions of the dataset for pos and neg
+```{r}
+prop.table(tb)*100
+```
+
+# Resolving the data imbalance in neg and pos 
+## random down sampling
+```{r}
+
+# randomly sampling the 268 values as our pos are just 268 vs 500 neg
+index_neg <- sample(1:400, 268)
+
+neg <- data[which(data$diabetes == "neg"),] # subsetting the neg
+
+pos <- data[which(data$diabetes == "pos"),] # subsetting the pos
+
+neg_data <- neg[index_neg,] # choosing the 268 values from neg subset
+
+undersample_data <- rbind(pos, neg_data) # adding that to pos subset which is already 268
+
+table(undersample_data$diabetes)
+```
+
+# random up sampling
+```{r}
+index_pos1 <- sample(1:232, 232) # sampling the 232 samples for pos cases
+
+pos_data <- pos[index_pos1,] # only choosing out the pos cases with sampling
+
+pos_data <- rbind(pos, pos_data) # adding to the already existing pos cases
+
+upsample_data <- rbind(pos_data, neg)
+table(upsample_data$diabetes)
+```
+
+# Splitting data
+```{r}
+index <- createDataPartition(upsample_data$diabetes, list = F, p= 0.8)
+
+train <- upsample_data[index,]
+
+test <- upsample_data[-index,]
+```
+
+# fitting the model
+```{r}
+model <- naiveBayes(diabetes ~., data = train)
+model
+
+pred1 <- predict(model, newdata = test)
+
+tb1 <- table(pred1, test$diabetes)
+tb1
+
+confusionMatrix(tb1)
+```
+# the percentage changes every time you run the model
+# method 2
+```{r}
+trcontrol <- trainControl(
+  method = "cv",
+  number = 10
+)
+
+model1 <- train(
+  diabetes ~., 
+  data = train,
+  method = "naive_bayes",
+  preProcess = c("BoxCox", "scale","center")
+)
+
+pred1 <- predict(model1, test, "raw")
+
+tb <- table(pred1, test$diabetes)
+tb
+
+confusionMatrix(tb)
+```
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

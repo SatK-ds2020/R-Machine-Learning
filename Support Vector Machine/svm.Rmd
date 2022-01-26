@@ -1,0 +1,250 @@
+---
+title: "Predict wine quality using SVM"
+author: "Satindra Kathania"
+date: "12/15/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading the data and packages
+
+    We are going to predict the red wine quality using svm. this is going to be classification problem, if the quality of wine is >= 7 we are going to classify as good quality else bad.
+    
+```{r data and packages}
+library(tidyverse)
+library(caret)
+library(DataExplorer) # plotting the missing data
+```
+# reading the data
+```{r,`show_col_types = FALSE`}
+wine_quality <- read_csv('data/winequality-red.csv')
+summary(wine_quality)
+str(wine_quality)
+```
+
+## Analysis eg NA ...
+
+```{r Analysis}
+# handling NA values
+colSums(is.na(wine_quality))# no NA values
+# plotting NA values
+plot_missing(wine_quality)
+```
+
+## Exploratory Data Analysis
+
+```{r EDA}
+# plotting individual variables
+# alcohol
+# skewed
+ggplot(data = wine_quality) +
+  geom_histogram(aes(alcohol), bins = 20) +
+  ggtitle('distribution of alcohol')
+
+# density plot
+ggplot(data = wine_quality) +
+  geom_density(aes(x=alcohol))
+
+ggplot(data = wine_quality) +
+  geom_histogram(aes(log(alcohol)), bins = 20) 
+
+# sulphates
+ggplot(data = wine_quality) +
+  geom_histogram(aes(sulphates), bins = 20)
+# pH
+ggplot(data = wine_quality) +
+  geom_histogram(aes(pH), bins = 20)
+# density
+ggplot(data = wine_quality) +
+  geom_histogram(aes(density), bins = 20)
+# total sulfur dioxide
+ggplot(data = wine_quality) +
+  geom_histogram(aes(`total sulfur dioxide`), bins = 20)
+# free sulfur dioxide
+ggplot(data = wine_quality) +
+  geom_histogram(aes(`free sulfur dioxide`), bins = 20)
+# chlorides
+ggplot(data = wine_quality) +
+  geom_histogram(aes(chlorides), bins = 20)
+# residual sugar
+ggplot(data = wine_quality) +
+  geom_histogram(aes(`residual sugar`), bins = 20)
+# citric acid
+ggplot(data = wine_quality) +
+  geom_histogram(aes(`citric acid`), bins = 20)
+# volatile acidity
+ggplot(data = wine_quality) +
+  geom_histogram(aes(`volatile acidity`), bins = 20)
+# fixed acidity
+ggplot(data = wine_quality) +
+  geom_histogram(aes(`fixed acidity`), bins = 20)
+
+## box plot
+# outliers
+ggplot(data = wine_quality)+
+  geom_boxplot(aes(y=`fixed acidity`))
+
+# most of these variables are skewed.
+# we will fit the model as it is and the you will transform them later 
+# on to see the effect
+# try experimenting on your own, for the sake of this video i will not
+```
+
+```{r}
+library(corrplot)
+cr<-cor(wine_quality)
+corrplot(cr,type="lower")
+```
+
+
+# converting the quality variable into categorical
+```{r}
+wine_quality$quality <- as.factor(wine_quality$quality)
+```
+
+## Data Splitting
+
+```{r data splitting}
+# splitting the data
+# train 75% and test 25%
+index <- createDataPartition(wine_quality$quality, p=0.75, list = FALSE)
+train <- wine_quality[index,]
+test <- wine_quality[-index,]
+```
+
+## modelling
+
+```{r model1}
+# names(getModelInfo()), gives a list of the methods you can use
+library(kernlab)
+
+grid<-expand.grid(C=c(0.5,1,1.25,1.50,1.75,2,5),sigma=c(.05,.09,0.1))
+
+
+svm_radial <- train(quality~., data=train, 
+                preProcess=c("scale","center"),
+                tuneGrid=grid,
+                method='svmRadial')
+svm_radial
+```
+
+# making the predictions
+```{r}
+pred1 <- predict(svm_radial, newdata = test)
+pred1
+confusionMatrix(table(pred1,test$quality))
+```
+
+```{r}
+#trctrl<-trainControl(method = "repeatedcv",number = 10,repeats = 3)
+grid<-expand.grid(C=c(0.5,1,1.25,1.50,1.75,2,5))
+svm_linear<-train(quality~., data=train, 
+                  #trControl=trctrl,
+                preProcess=c("scale","center"),
+                 tuneGrid=grid,
+                method='svmLinear')
+svm_linear
+
+pred_L <- predict(svm_linear, newdata = test)
+#pred_L
+confusionMatrix(table(pred_L,test$quality))
+```
+
+
+```{r}
+#trctrl<-trainControl(method = "repeatedcv",number = 10,repeats = 3)
+svm_Poly<-train(quality~., data=train, 
+                  #trControl=trctrl,
+                preProcess=c("scale","center"),
+                method='svmPoly')
+svm_Poly
+pred1 <- predict(svm_radial, newdata = test)
+pred1
+confusionMatrix(table(pred1,test$quality))
+
+```
+
+```{r}
+#trctrl<-trainControl(method = "repeatedcv",number = 10,repeats = 3)
+
+grid<-expand.grid(C=c(0.5,1,1.25,1.50,1.75,2,5),sigma=c(.05,.09,0.15,0.2))
+svm_RadialSigma<-train(quality~., data=train, 
+                  #trControl=trctrl,
+                preProcess=c("scale","center"),
+                method='svmRadialSigma')
+svm_RadialSigma
+
+pred_RadialSigma <- predict(svm_RadialSigma, newdata = test)
+#pred_RadialSigma
+confusionMatrix(table(pred_RadialSigma,test$quality))
+```
+
+
+
+# To compare predicted values and actual values, we can use plots for continious values
+```{r}
+plot(test$quality,type="l",lty=1.8,col="red")
+lines(pred1,type="l",col="blue")
+
+plot(svm_linear)
+plot(svm_radial)
+plot(svm_RadialSigma)
+plot(svm_Poly)
+```
+
+
+
+## you can improve the model by handling the skewed variables and the outliers.
+
+# Null Deviance shows how well the response variable is predicted by a model that includes only the intercept(grand mean)
+
+# Residual deviance shows how well the response variable is predicted with inclusion of independent variables.
+
+# AIC should be smaller
+
+# ROC curve: for calculating the accuracy of our model
+
+
+res<-predict(model,testing,type="response")
+table(ActualValue=training$type,PredictedValue=res>0.5)
+or 
+table(ActualValue=training$type,PredictedValue=res>0.3)
+
+
+
+res<-predict(model,training,type="response")
+library(ROCR)
+ROCRPred=prediction(res,training,type="response)
+ROCRPref<-performance(ROCRPred,"tpr","fpr")
+plot(ROCRPref,colorize=TRUE,print.cutoff.at=seq(0.1,by=0.1))
+
+#Finding multicollinearity
+Variance inflation factor(VIF):measures the increase in the variance (the square of the estimates standard devuations) of an estimated regression coefficient due to multicollinearity.
+
+# vif
+install.packages("car")
+library(car)
+model<-lm(medv~. ,data=training_data)
+vif(model)
+A VIF of 1 means that there is no correlation amomg variables.
+
+attach(Boston)
+library(lattice)
+splom(~Boston[c(1:6,14)]),groups=NULL,data=Boston,axis.line.tck=0,axis.text.alpha=0)
+splom(~Boston[c(7:14)]),groups=NULL,data=Boston,axis.line.tck=0,axis.text.alpha=0)
+
+library(corrplot)
+cr<-cor(wine_quality)
+corrplot(cr,type="lower")
+corrplot(cr,type="number")
+
+
+
+
+
+
+
+ thanks for watching.

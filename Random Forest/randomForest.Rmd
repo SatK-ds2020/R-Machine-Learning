@@ -1,0 +1,125 @@
+---
+title: "randomforest"
+author: "Satindra Kathania"
+date: "12/16/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# works best for both classification and regression
+# create a model to predict mortality caused by heart failure
+# loading the libraries
+```{r,message=FALSE}
+library(caret) # splitting the data
+library(randomForest)
+library(tidyverse)
+```
+
+# loading the data
+```{r}
+# USE CASE: weather prediction-play or not,Banking,Credit Risk Detection, Movie recommendation, medicine;identification of a trisk patients,Land Use,Customer Churn,Marketing
+
+data <- readr::read_csv("heart_failure_clinical_records_dataset.csv")
+
+glimpse(data)
+
+summary(data)
+```
+# check for na
+```{r}
+colSums(is.na(data))
+```
+# convert columns to factors
+```{r}
+cols <- c("anaemia","diabetes","high_blood_pressure","sex","smoking","DEATH_EVENT")
+
+data <- data %>%
+  mutate_at(cols, list(~factor(.)))
+glimpse(data)
+```
+# normalize the numeric variables
+```{r}
+cols2 <- c("age","creatinine_phosphokinase","ejection_fraction","platelets",
+           "serum_creatinine","serum_sodium","time")
+
+data <- data %>%
+  mutate_at(cols2, list(~BBmisc::normalize(.)))
+
+glimpse(data)
+```
+
+# visualization
+# you can do visualization
+
+# modeling
+# data splitting
+```{r}
+index <- createDataPartition(data$DEATH_EVENT, list = FALSE, p = 0.75)
+
+# train data
+train <- data[index,]
+test <- data[-index,]
+```
+#findind the best tree numbers(mtry)
+```{r}
+# bestmtry<-tuneRF(train,train$DEATH_EVENT,stepFactor = 1.2,improve=0.01,trace=T,plot=T)
+
+```
+# method 1
+```{r}
+model <- randomForest(DEATH_EVENT~., data = train, importance = TRUE)
+model
+
+
+model3 <- randomForest(DEATH_EVENT~ejection_fraction+serum_creatinine+time, data = train, importance = TRUE)
+model3
+```
+# variable importance
+```{r}
+varImpPlot(model)
+
+importance(model)
+```
+# making predictions
+```{r}
+pred <- predict(model3, newdata = test, type = "response")
+
+# confusion table
+ct <- table(pred, test$DEATH_EVENT)
+
+# confusion matrix
+cm <- confusionMatrix(ct)
+cm
+```
+
+# method 2
+# cross validation
+```{r}
+model2 <- train(DEATH_EVENT~., data=train, method="rf")
+model2
+```
+# predictions
+```{r}
+pred2 <- predict(model2, newdata = test, type = "raw")
+
+# confusion table
+ct1 <- table(pred2, test$DEATH_EVENT)
+
+# matrix
+confusionMatrix(ct1)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

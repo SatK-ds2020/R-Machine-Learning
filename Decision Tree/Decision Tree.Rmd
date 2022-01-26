@@ -1,0 +1,123 @@
+---
+title: "Decision Tree with R and RStudio"
+author: "Satindra Kathania"
+date: "10/30/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading the Data and packages
+
+```{r Data and packages,message=FALSE}
+
+# Diabetes.csv dataset
+# weather sunny windy play or not dataset
+
+
+library(tidyverse)
+library(rpart) # decision tree
+library(caret) # tuning
+```
+# i am using the same data i used in logistic regression
+
+# reading the data
+```{r}
+AdmData <- read_csv('data/Admission_Predict_Ver1.1.csv')[-1]
+# structure of the data
+str(AdmData)
+# summary stats
+summary(AdmData)
+```
+## Data Preparation
+
+```{r Data Prep}
+# converting them into the correct data types
+# i have renamed(AdmData --> AdmData_1) to preserve the original data
+AdmData_1 <- AdmData %>%
+  mutate(
+    `University Rating` = as_factor(`University Rating`),
+    `Research` = as_factor(`Research`),
+    `SOP` = as_factor(`SOP`)
+  )
+glimpse(AdmData_1)
+```
+
+# checking NA/MISSING DATA
+```{r}
+colSums(is.na(AdmData_1)) # no NA values
+AdmData_1$`Chance of Admit` # to help me choose a representative threshold
+```
+
+# split the data
+```{r}
+AdmData_1$`Chance of Admit` <- ifelse(AdmData_1$`Chance of Admit` >0.7,1,0)
+
+# index to split
+index <- createDataPartition(AdmData_1$`Chance of Admit`,list = FALSE, p=0.8)
+index = as_vector(index)
+train <- AdmData_1[index,]
+test <- AdmData_1[-index,]
+# more training data for better examples for the model to learn from
+
+# i am using the same preprocessing as used in the logistic regression
+```
+
+## Exploratory Data Analaysis
+
+```{r EDA}
+# check out my data viz series and you can make some awesome EDA
+# i will leave the link in the description below
+```
+
+## Modelling
+
+```{r modelling}
+# adding then data to the search path
+attach(AdmData_1)
+
+# using the decision trees to decide if a candidate fits to join the masters program
+model1 <- ctree(`Chance of Admit`~., data = AdmData_1)
+model1
+plot(model1)
+```
+
+##modelling 2
+
+```{r modelling2}
+# reducing the variables for better plot
+model2 <- ctree(`Chance of Admit`~ `University Rating` + `GRE Score`+ `TOEFL Score`, data = AdmData_1)
+model2
+plot(model2)
+```
+
+## modelling 3
+
+```{r modelling 3}
+# convert the response into categorical
+AdmData_1$`Chance of Admit` <- ifelse(AdmData_1$`Chance of Admit` >0.7, 1, 0)
+model3 <- ctree(`Chance of Admit`~., data = AdmData_1)
+model3
+plot(model3)
+
+```
+
+## predictions
+
+```{r predictions}
+# making predictions
+pred <- predict(model3, newdata=test)
+pred
+
+# comparison with actual values
+pred <- ifelse(pred > 0.7, 1, 0)
+df <- data.frame(pred, test$`Chance of Admit`)
+df
+table(df)
+
+confusionMatrix(table(pred,test$`Chance of Admit`))
+# now i will commit the changes i have made.
+```
+
